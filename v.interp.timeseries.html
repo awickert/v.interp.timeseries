@@ -1,0 +1,217 @@
+<h2>DESCRIPTION</h2>
+
+<em>v.interp.timeseries</em> interpolates a station-based climate time series
+(stored in a SQLite table by <em>v.in.ghcn</em> or a similar module) to raster
+grids, to point samples, or to polygon areas.
+
+<p>
+Three interpolation methods are provided: inverse-distance weighting
+(<b>method=idw</b>), thin-plate spline (<b>method=spline</b>), and covariate
+regression with spline residuals (<b>method=regression</b>).
+</p>
+
+<h2>NOTES</h2>
+
+<h3>Inputs</h3>
+
+<p>
+The station vector map (<b>input</b>) and its companion SQLite table
+(<b>table</b>) are typically produced by
+<em><a href="v.in.ghcn.html">v.in.ghcn</a></em>.
+The table must contain at minimum the columns
+<tt>cat</tt>, <tt>datetime</tt>, <tt>element</tt>, and <tt>value</tt>
+as written by that module. By default <b>table</b> is
+<tt>{input}_timeseries</tt>.
+</p>
+
+<h3>Methods</h3>
+
+<table>
+  <tr>
+    <th>method=</th><th>Algorithm</th><th>Notes</th>
+  </tr>
+  <tr>
+    <td>idw</td>
+    <td>Inverse-distance weighting</td>
+    <td>Controlled by <b>power</b> and <b>npoints</b>. Pure numpy + scipy KDTree; fast.</td>
+  </tr>
+  <tr>
+    <td>spline</td>
+    <td>Thin-plate spline (RBF)</td>
+    <td>Exact interpolator via <tt>scipy.interpolate.RBFInterpolator</tt>.
+        May produce artefacts in extrapolation; use <b>-m</b> to mask.</td>
+  </tr>
+  <tr>
+    <td>regression</td>
+    <td>Linear regression on covariates + thin-plate spline on residuals</td>
+    <td>Requires <b>covariates=</b>. Analogous to PRISM-style detrended interpolation.
+        Falls back to plain spline if no covariates are supplied.</td>
+  </tr>
+</table>
+
+<h3>Covariates</h3>
+
+<p>
+When <b>method=regression</b>, one or more raster maps are supplied via
+<b>covariates=</b> (comma-separated, e.g. <tt>dem,slope</tt>). These must
+exist in the current mapset or be visible across mapsets. A least-squares
+regression is fit between station values and the covariate values at station
+locations; the residuals are then interpolated by thin-plate spline and added
+back to the predicted surface.
+</p>
+
+<p>
+Elevation is the most common covariate: temperature decreases and
+orographic precipitation increases with altitude. Any raster may be used,
+however — topographic slope, aspect, distance to coast, etc.
+</p>
+
+<h3>Output</h3>
+
+<p>
+When <b>output=</b> is supplied, one FCELL raster map is written per
+time step, named <tt>&lt;output&gt;_YYYYMMDD</tt> (daily) or
+<tt>&lt;output&gt;_YYYYMM01</tt> (monthly). Use <b>-t</b> to register
+these automatically as a GRASS space-time raster dataset (strds).
+</p>
+
+<h3>Sample extraction</h3>
+
+<p>
+When <b>sample=</b> is supplied, interpolated values are extracted at
+the sample locations and written to a SQLite table named
+<tt>&lt;sample&gt;_timeseries</tt> in the mapset database.
+</p>
+
+<table>
+  <tr><th>sample= geometry</th><th>Extraction method</th></tr>
+  <tr>
+    <td>Points</td>
+    <td>Nearest-cell lookup from the interpolated grid
+        (or direct interpolation at point coordinates if <b>output=</b> is omitted)</td>
+  </tr>
+  <tr>
+    <td>Areas (polygons)</td>
+    <td>Area-weighted mean of all grid cells within each polygon.
+        Requires <b>output=</b>. Results are keyed by polygon <tt>cat</tt>
+        and conceptually linked to the polygon centroid.</td>
+  </tr>
+</table>
+
+<h3>Missing data and fill</h3>
+
+<p>
+Time steps with fewer than <b>min_stations</b> stations reporting data are
+skipped. With <b>-f</b>, stations that are missing on a given day borrow
+their value from the nearest station that does have data. This keeps the
+spatial coverage consistent across the time series but introduces spatial
+smoothing; use with care for sparse networks.
+</p>
+
+<h3>Convex hull mask</h3>
+
+<p>
+With <b>-m</b>, output raster cells outside the convex hull of the active
+stations are set to null. This prevents extrapolation artefacts, particularly
+for the spline method. The mask is recomputed for each time step because the
+set of reporting stations can vary.
+</p>
+
+<h3>Error metric</h3>
+
+<p>
+When <b>output=</b> is given, leave-one-out (LOO) cross-validation is
+performed at each time step and the root-mean-square error (RMSE) is stored
+in a SQLite table named <tt>&lt;output&gt;_errors</tt>:
+</p>
+
+<div class="code"><pre>
+datetime   TEXT      -- ISO 8601 date
+element    TEXT      -- e.g. PRCP
+rmse       REAL      -- LOO cross-validation RMSE (NULL if not computed)
+n_stations INTEGER   -- number of stations used
+</pre></div>
+
+<p>
+LOO is computed before neighbor fill so it reflects actual data density.
+For <b>method=spline</b> with more than 50 active stations the LOO step is
+skipped (thin-plate spline requires O(n³) work per fold) and RMSE is stored
+as NULL.
+</p>
+
+<h3>Sample table schema</h3>
+
+<div class="code"><pre>
+cat        INTEGER   -- GRASS category (polygon or point)
+datetime   TEXT      -- ISO 8601 date
+element    TEXT      -- e.g. PRCP
+value      REAL      -- interpolated value in source units (mm, °C, …)
+</pre></div>
+
+<h2>EXAMPLES</h2>
+
+Interpolate PRCP to a daily raster grid using IDW, register as a strds:
+<div class="code"><pre>
+v.interp.timeseries input=gauges element=PRCP method=idw output=prcp -t
+</pre></div>
+
+Spline interpolation with convex hull masking, 2000–2020:
+<div class="code"><pre>
+v.interp.timeseries input=gauges element=PRCP method=spline output=prcp \
+    start_date=2000-01-01 end_date=2020-12-31 -t -m
+</pre></div>
+
+Regression against a DEM with neighbor fill for missing stations:
+<div class="code"><pre>
+v.interp.timeseries input=gauges element=TMAX method=regression \
+    covariates=dem output=tmax start_date=1990-01-01 -t -f
+</pre></div>
+
+Extract time series at watershed centroids only (no grid):
+<div class="code"><pre>
+v.interp.timeseries input=gauges element=PRCP method=idw \
+    sample=watersheds start_date=2010-01-01
+</pre></div>
+
+Produce both grid output and watershed-averaged time series:
+<div class="code"><pre>
+v.interp.timeseries input=gauges element=PRCP method=regression \
+    covariates=dem output=prcp sample=watersheds -t -m
+</pre></div>
+
+Query the sample table:
+<div class="code"><pre>
+db.select sql="SELECT cat, datetime, value FROM watersheds_timeseries \
+  WHERE cat=1 ORDER BY datetime"
+
+# Annual totals per watershed
+db.select sql="SELECT cat, substr(datetime,1,4) AS year, SUM(value) AS prcp_mm \
+  FROM watersheds_timeseries WHERE element='PRCP' GROUP BY cat, year"
+</pre></div>
+
+Query the error table:
+<div class="code"><pre>
+db.select sql="SELECT datetime, rmse, n_stations FROM prcp_errors ORDER BY datetime"
+</pre></div>
+
+<h2>REQUIREMENTS</h2>
+
+<ul>
+  <li>Python package <tt>scipy</tt> —
+      <tt>sudo apt install python3-scipy</tt> (Debian/Ubuntu)</li>
+</ul>
+
+<h2>SEE ALSO</h2>
+
+<em>
+<a href="v.in.ghcn.html">v.in.ghcn</a>,
+<a href="v.surf.rst.html">v.surf.rst</a>,
+<a href="r.in.gridmet.html">r.in.gridmet</a>,
+<a href="t.create.html">t.create</a>,
+<a href="t.register.html">t.register</a>,
+<a href="db.select.html">db.select</a>
+</em>
+
+<h2>AUTHOR</h2>
+
+Andrew Wickert
