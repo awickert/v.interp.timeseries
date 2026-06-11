@@ -485,8 +485,11 @@ def main():
     error_table  = None
     sample_table = None
 
-    if output_base:
-        error_table = '{}_errors'.format(output_base)
+    error_table_name = ('{}_errors'.format(output_base) if output_base
+                        else '{}_errors'.format(sample_map.split('@')[0]) if sample_map
+                        else None)
+    if error_table_name:
+        error_table = error_table_name
         cur.execute('DROP TABLE IF EXISTS "{}"'.format(error_table))
         cur.execute(
             'CREATE TABLE "{}" '
@@ -645,8 +648,10 @@ def main():
     if output_base and output_maps:
         gs.message("Output rasters: {}_<date> ({} maps).".format(
             output_base, len(output_maps)))
-        if error_table:
-            gs.message("Error metrics: table '{}' in mapset SQLite db.".format(error_table))
+    if error_table and n_done > 0:
+        gs.message("Error metrics: table '{}' in mapset SQLite db.".format(error_table))
+        gs.message("  db.select sql=\"SELECT datetime, n_stations, rmse FROM {} LIMIT 10\"".format(
+            error_table))
     if sample_map and n_done > 0:
         gs.message("Sample time series: table '{}' in mapset SQLite db.".format(sample_table))
         gs.message("  db.select sql=\"SELECT * FROM {} LIMIT 10\"".format(sample_table))
