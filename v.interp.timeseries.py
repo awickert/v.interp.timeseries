@@ -119,7 +119,7 @@
 #%end
 
 #%flag
-#%  key: f
+#%  key: n
 #%  description: Fill stations with missing data from nearest neighbor with data
 #%end
 
@@ -405,7 +405,7 @@ def main():
     sample_map  = options['sample'] or None
     min_stn     = int(options['min_stations'])
     flag_t      = flags['t']
-    flag_f      = flags['f']
+    flag_n      = flags['n']
     flag_m      = flags['m']
     flag_w      = flags['w']
 
@@ -572,7 +572,7 @@ def main():
             )
 
         # neighbor fill
-        if flag_f:
+        if flag_n:
             cat_to_val, active_cats = neighbor_fill(
                 all_cats, cat_to_xy, cat_to_val, active_cats)
             active_list = sorted(active_cats)
