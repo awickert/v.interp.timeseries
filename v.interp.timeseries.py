@@ -129,8 +129,8 @@
 #%end
 
 #%flag
-#%  key: w
-#%  description: Overwrite existing records for this element in the output tables
+#%  key: f
+#%  description: Force overwrite of existing records for this element in the output tables
 #%end
 
 import os
@@ -407,7 +407,7 @@ def main():
     flag_t      = flags['t']
     flag_n      = flags['n']
     flag_m      = flags['m']
-    flag_w      = flags['w']
+    flag_f      = flags['f']
 
     if not output_base and not sample_map:
         gs.fatal("Specify output= and/or sample=.")
@@ -507,7 +507,7 @@ def main():
             'SELECT COUNT(*) FROM "{}" WHERE element=?'.format(error_table), (element,)
         ).fetchone()[0]
         if n_existing:
-            if not flag_w:
+            if not flag_f:
                 gs.fatal(
                     "Table '{}' already contains {:,} '{}' records. "
                     "Use -w to overwrite.".format(error_table, n_existing, element))
@@ -523,7 +523,7 @@ def main():
             'SELECT COUNT(*) FROM "{}" WHERE element=?'.format(sample_table), (element,)
         ).fetchone()[0]
         if n_existing:
-            if not flag_w:
+            if not flag_f:
                 gs.fatal(
                     "Table '{}' already contains {:,} '{}' records. "
                     "Use -w to overwrite.".format(sample_table, n_existing, element))
