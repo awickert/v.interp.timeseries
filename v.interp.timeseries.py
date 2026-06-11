@@ -482,6 +482,9 @@ def main():
             sample_pt_cats = get_point_coords(sample_map, type='centroid')
 
     # --- create output tables ---
+    # Tables accumulate across elements: CREATE IF NOT EXISTS + DELETE for the
+    # current element so that running PRCP, TMAX, TMIN separately builds one
+    # shared table rather than overwriting it each time.
     error_table  = None
     sample_table = None
 
@@ -490,18 +493,22 @@ def main():
                         else None)
     if error_table_name:
         error_table = error_table_name
-        cur.execute('DROP TABLE IF EXISTS "{}"'.format(error_table))
         cur.execute(
-            'CREATE TABLE "{}" '
+            'CREATE TABLE IF NOT EXISTS "{}" '
             '(datetime TEXT, element TEXT, rmse REAL, n_stations INTEGER)'.format(error_table)
+        )
+        cur.execute(
+            'DELETE FROM "{}" WHERE element=?'.format(error_table), (element,)
         )
 
     if sample_map:
         sample_table = '{}_timeseries'.format(sample_map.split('@')[0])
-        cur.execute('DROP TABLE IF EXISTS "{}"'.format(sample_table))
         cur.execute(
-            'CREATE TABLE "{}" '
+            'CREATE TABLE IF NOT EXISTS "{}" '
             '(cat INTEGER, datetime TEXT, element TEXT, value REAL)'.format(sample_table)
+        )
+        cur.execute(
+            'DELETE FROM "{}" WHERE element=?'.format(sample_table), (element,)
         )
 
     conn.commit()
