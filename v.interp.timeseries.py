@@ -128,6 +128,11 @@
 #%  description: Mask output to the convex hull of active stations
 #%end
 
+#%flag
+#%  key: w
+#%  description: Overwrite existing records for this element in the output tables
+#%end
+
 import os
 import sys
 import math
@@ -402,6 +407,7 @@ def main():
     flag_t      = flags['t']
     flag_f      = flags['f']
     flag_m      = flags['m']
+    flag_w      = flags['w']
 
     if not output_base and not sample_map:
         gs.fatal("Specify output= and/or sample=.")
@@ -497,9 +503,15 @@ def main():
             'CREATE TABLE IF NOT EXISTS "{}" '
             '(datetime TEXT, element TEXT, rmse REAL, n_stations INTEGER)'.format(error_table)
         )
-        cur.execute(
-            'DELETE FROM "{}" WHERE element=?'.format(error_table), (element,)
-        )
+        n_existing = cur.execute(
+            'SELECT COUNT(*) FROM "{}" WHERE element=?'.format(error_table), (element,)
+        ).fetchone()[0]
+        if n_existing:
+            if not flag_w:
+                gs.fatal(
+                    "Table '{}' already contains {:,} '{}' records. "
+                    "Use -w to overwrite.".format(error_table, n_existing, element))
+            cur.execute('DELETE FROM "{}" WHERE element=?'.format(error_table), (element,))
 
     if sample_map:
         sample_table = '{}_timeseries'.format(sample_map.split('@')[0])
@@ -507,9 +519,15 @@ def main():
             'CREATE TABLE IF NOT EXISTS "{}" '
             '(cat INTEGER, datetime TEXT, element TEXT, value REAL)'.format(sample_table)
         )
-        cur.execute(
-            'DELETE FROM "{}" WHERE element=?'.format(sample_table), (element,)
-        )
+        n_existing = cur.execute(
+            'SELECT COUNT(*) FROM "{}" WHERE element=?'.format(sample_table), (element,)
+        ).fetchone()[0]
+        if n_existing:
+            if not flag_w:
+                gs.fatal(
+                    "Table '{}' already contains {:,} '{}' records. "
+                    "Use -w to overwrite.".format(sample_table, n_existing, element))
+            cur.execute('DELETE FROM "{}" WHERE element=?'.format(sample_table), (element,))
 
     conn.commit()
 
